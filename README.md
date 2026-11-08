@@ -1,64 +1,77 @@
 # Voice Agent Workflow
 
-Minimal, browser-based demonstration of a 5-step voice agent pipeline for restaurant reservations.
+Working voice agent for restaurant reservation availability.
 
 Sponsored by Creignificent LLC.
 
-Customer speaks → Speech-to-Text → LLM intent detection → Tool decision → Text-to-Speech, with explicit interruption (barge-in) and handoff handling.
+Speak into the microphone → speech-to-text → intent detection → availability check against reservation data → spoken reply, with interruption and handoff handling.
 
 ## Quick Start
 
-1. Open `index.html` in any browser, or  
-2. Deploy to Vercel (import the repo).
+1. Deploy the repo to Vercel (import `CreigT/reservation-voice-agent.`).
+2. Open the live URL in Chrome.
+3. Hold the **Hold to speak** button and say a request, for example:
+   - “I’d like a table for two tomorrow.”
+   - “I have a complaint.” (triggers handoff)
+4. Speak again while the agent is talking to interrupt.
 
-Click the buttons to run:
-- Normal booking
-- Interruption (barge-in) test
-- Handoff test
+Metrics (response time, task completion, state) update after each turn.
 
-Metrics (response time, task completion, handoff) update after each run.
+## Data Source
+
+The backend loads reservation data in this order:
+
+1. Environment variable `RESERVATIONS_URL` (public CSV or JSON URL).
+2. Bundled fallback `api/reservations.json` if no URL is set or the fetch fails.
+
+Results are cached in memory for `CACHE_TTL_SECONDS` (default 60).
+
+**Vercel environment variables (optional)**
+- `RESERVATIONS_URL` — public CSV or JSON link
+- `CACHE_TTL_SECONDS` — cache duration (default 60)
 
 ## SECURE
 
-This is a client-side simulation with an optional backend that reads a public CSV.
-
 **Trust boundaries**
-- Frontend logic runs in the browser.
-- Backend fetches only the public reservations.csv.
-- No real external reservation system or LLM API is called.
-- No user data is stored.
+- Microphone and speech synthesis run in the browser (Web Speech API).
+- Backend receives only the transcript text.
+- Data source is either the URL you set in `RESERVATIONS_URL` or the bundled JSON.
+- No user audio or personal data is stored.
 
 **Current enforcement**
-- Deterministic rule-based decisions for the three demo paths (booking, interrupt, handoff).
-- Data source is the public CSV in this repo.
+- Explicit state machine: `BOOKING` | `INTERRUPTED` | `HANDOFF`.
+- Availability tool reads only from the cached reservation data.
+- In-memory cache with TTL; no persistent external store required.
 
 **Explicit non-goals**
-- Not a production voice agent.
-- Not connected to any live reservation system, telephony provider, or LLM API.
-- Not intended for real customer traffic.
+- Not connected to a live restaurant reservation system or telephony provider.
+- Not using a remote LLM API (intent is rule-based).
+- Not intended for production customer traffic without further hardening.
 
 ## VERIFY
 
-Verification is manual and immediate:
+1. Deploy and open the live URL in Chrome.
+2. Hold the button and say “I’d like a table for two tomorrow.”  
+   Confirm the reply uses data from the reservation source and state = `BOOKING`.
+3. While the agent is speaking, hold the button again.  
+   Confirm TTS stops and state = `INTERRUPTED`.
+4. Say “I have a complaint.”  
+   Confirm state = `HANDOFF` and no availability is confirmed.
 
-1. Open the deployed URL (or `index.html`).
-2. Run **Normal booking** — confirm tool path, task completion = Yes, and reply uses CSV data.
-3. Run **Test interruption** — confirm previous response is stopped and new turn is processed.
-4. Run **Test handoff** — confirm handoff is triggered and no reservation tool is called.
-
-All three cases and expected outcomes are listed in `docs/OPERATIONAL_CARD.md`.
+Full verification points are in `docs/OPERATIONAL_CARD.md`.
 
 ## DOCUMENT
 
-Full operational details, trust boundaries, verification points, and next secure step:
+Operational details, trust boundaries, verification points, and next secure step:
 
 → [docs/OPERATIONAL_CARD.md](docs/OPERATIONAL_CARD.md)
 
 ## Stack
 
-- HTML frontend
-- Python serverless backend (`api/agent.py`)
-- Public CSV data source
+- HTML frontend with Web Speech API (microphone + TTS)
+- Python serverless backend (`api/agent.py`) with SSE streaming
+- In-memory cache + bundled JSON fallback
+- Optional remote data via `RESERVATIONS_URL`
 - Deployable on Vercel
 
 ## License

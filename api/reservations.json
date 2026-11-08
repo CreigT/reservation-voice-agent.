@@ -1,0 +1,7 @@
+[
+  {"party_size": "2", "date": "tomorrow", "time": "19:00", "status": "available", "confirmation": ""},
+  {"party_size": "4", "date": "tomorrow", "time": "19:00", "status": "available", "confirmation": ""},
+  {"party_size": "2", "date": "tomorrow", "time": "18:00", "status": "booked", "confirmation": "RES-2-TOMORR"},
+  {"party_size": "6", "date": "saturday", "time": "20:00", "status": "available", "confirmation": ""},
+  {"party_size": "10", "date": "any", "time": "any", "status": "handoff", "confirmation": ""}
+]

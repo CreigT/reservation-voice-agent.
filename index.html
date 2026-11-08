@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Agent Workflow Demo</title>
+<style>
+  :root { --bg: #0f1419; --card: #1a2332; --text: #e6edf3; --muted: #8b9bb4; --accent: #3b82f6; --green: #22c55e; --yellow: #eab308; --pink: #ec4899; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 1.5rem; line-height: 1.5; }
+  .container { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin: 0 0 0.5rem; }
+  .subtitle { color: var(--muted); margin-bottom: 1.5rem; font-size: 0.95rem; }
+  .metrics { background: var(--card); border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
+  .metric { text-align: center; }
+  .metric span { display: block; font-size: 1.4rem; font-weight: 600; margin-top: 0.2rem; }
+  .metric small { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+  button { background: var(--accent); color: white; border: none; padding: 0.65rem 1rem; border-radius: 8px; font-size: 0.9rem; cursor: pointer; }
+  button:hover { opacity: 0.9; }
+  button.secondary { background: #334155; }
+  #log { background: #0a0e14; color: #7dd3fc; padding: 1rem; border-radius: 12px; min-height: 180px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; white-space: pre-wrap; overflow-y: auto; max-height: 320px; }
+  .note { margin-top: 1.5rem; font-size: 0.8rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Voice Agent Workflow</h1>
+  <p class="subtitle">Minimal single-file demo — reservation flow + interruption (barge-in) test</p>
+
+  <div class="metrics">
+    <div class="metric"><small>Response time</small><span id="time">—</span></div>
+    <div class="metric"><small>Task completion</small><span id="complete">—</span></div>
+    <div class="metric"><small>Handoff</small><span id="handoff">—</span></div>
+  </div>
+
+  <div class="buttons">
+    <button onclick="runNormal()">Run normal booking</button>
+    <button onclick="runInterrupt()">Test interruption</button>
+    <button class="secondary" onclick="runHandoff()">Test handoff</button>
+    <button class="secondary" onclick="clearLog()">Clear</button>
+  </div>
+
+  <div id="log">Ready. Click a button to run the workflow.</div>
+
+  <p class="note">
+    Single file. Drag this into a Vercel project (or open locally).<br>
+    Metrics update after each run. Interruption test simulates barge-in while the agent is speaking.
+  </p>
+</div>
+
+<script>
+const logEl = document.getElementById('log');
+const timeEl = document.getElementById('time');
+const completeEl = document.getElementById('complete');
+const handoffEl = document.getElementById('handoff');
+
+function log(msg) {
+  logEl.textContent += (logEl.textContent.endsWith('\n') || logEl.textContent === '' ? '' : '\n') + msg;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function clearLog() {
+  logEl.textContent = 'Cleared.\n';
+  timeEl.textContent = '—';
+  completeEl.textContent = '—';
+  handoffEl.textContent = '—';
+}
+
+function simulate(transcript, isInterrupt = false) {
+  const start = performance.now();
+  const lower = transcript.toLowerCase();
+  let reply, completed = false, handoff = false, toolCalled = false;
+
+  if (isInterrupt) {
+    reply = "Understood — stopping previous response. How can I help with the new request?";
+    completed = true;
+  } else if (lower.includes("table for two tomorrow") || lower.includes("book a table")) {
+    toolCalled = true;
+    reply = "Table for 2 booked for tomorrow at 7:00 PM. Confirmation RES-2-TOMORR.";
+    completed = true;
+  } else if (lower.includes("party of 10") || lower.includes("complaint") || lower.includes("manager") || lower.includes("human")) {
+    handoff = true;
+    reply = "This needs a human. Transferring you now.";
+    completed = true;
+  } else {
+    reply = "I can help with reservations. Party size and date?";
+    completed = false;
+  }
+
+  const elapsed = Math.round(performance.now() - start);
+  return { reply, elapsed, completed, handoff, toolCalled };
+}
+
+function runNormal() {
+  clearLog();
+  log("[1] Customer speaks: I'd like to book a table for two tomorrow.");
+  log("[2] STT → text");
+  const r = simulate("I'd like to book a table for two tomorrow.");
+  log("[3] LLM identified intent: make_reservation");
+  if (r.toolCalled) log("[4] Agent called reservation tool");
+  log("[5] TTS: " + r.reply);
+  timeEl.textContent = r.elapsed + " ms";
+  completeEl.textContent = r.completed ? "Yes" : "No";
+  handoffEl.textContent = r.handoff ? "Yes" : "No";
+}
+
+function runInterrupt() {
+  clearLog();
+  log("[1] Customer: I'd like to book a table for two tomorrow.");
+  log("[5] Agent starts speaking confirmation...");
+  log(">>> INTERRUPTION (customer speaks while agent is talking)");
+  log("[Interrupt] Stopping TTS / clearing buffer");
+  const r = simulate("Wait, make it for four people instead", true);
+  log("[2-3] New STT + LLM on interrupted utterance");
+  log("[5] New TTS: " + r.reply);
+  timeEl.textContent = r.elapsed + " ms";
+  completeEl.textContent = r.completed ? "Yes" : "No";
+  handoffEl.textContent = "Interrupt handled";
+}
+
+function runHandoff() {
+  clearLog();
+  log("[1] Customer: I have a complaint about my last reservation.");
+  log("[2] STT → text");
+  const r = simulate("I have a complaint about my last reservation");
+  log("[3] LLM identified intent: needs human");
+  log("[4] Handoff triggered (no reservation tool)");
+  log("[5] TTS: " + r.reply);
+  timeEl.textContent = r.elapsed + " ms";
+  completeEl.textContent = r.completed ? "Yes" : "No";
+  handoffEl.textContent = r.handoff ? "Correct" : "No";
+}
+</script>
+</body>
+</html>

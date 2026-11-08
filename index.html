@@ -26,7 +26,7 @@
 <body>
 <div class="container">
   <h1>Voice Agent Workflow</h1>
-  <p class="subtitle">Minimal single-file demo — reservation flow + interruption (barge-in) test</p>
+  <p class="subtitle">Reservation flow with interruption (barge-in) and handoff — frontend + backend</p>
 
   <div class="metrics">
     <div class="metric"><small>Response time</small><span id="time">—</span></div>
@@ -44,8 +44,8 @@
   <div id="log">Ready. Click a button to run the workflow.</div>
 
   <p class="note">
-    Single file. Drag this into a Vercel project (or open locally).<br>
-    Metrics update after each run. Interruption test simulates barge-in while the agent is speaking.
+    Calls <code>/api/agent</code> when deployed. Falls back to local simulation if the backend is unavailable.<br>
+    Metrics update after each run.
   </p>
 </div>
 
@@ -67,11 +67,10 @@ function clearLog() {
   handoffEl.textContent = '—';
 }
 
-function simulate(transcript, isInterrupt = false) {
-  const start = performance.now();
+// Local fallback (used when /api/agent is not reachable)
+function localSimulate(transcript, isInterrupt = false) {
   const lower = transcript.toLowerCase();
   let reply, completed = false, handoff = false, toolCalled = false;
-
   if (isInterrupt) {
     reply = "Understood — stopping previous response. How can I help with the new request?";
     completed = true;
@@ -87,49 +86,71 @@ function simulate(transcript, isInterrupt = false) {
     reply = "I can help with reservations. Party size and date?";
     completed = false;
   }
-
-  const elapsed = Math.round(performance.now() - start);
-  return { reply, elapsed, completed, handoff, toolCalled };
+  return { reply, response_time_ms: 0, task_completed: completed, handoff_correct: handoff || null, tool_called: toolCalled, interrupt_handled: isInterrupt, source: "local" };
 }
 
-function runNormal() {
+async function callAgent(transcript, isInterrupt = false) {
+  const start = performance.now();
+  try {
+    const res = await fetch("/api/agent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transcript, interrupt: isInterrupt })
+    });
+    if (!res.ok) throw new Error("Backend returned " + res.status);
+    const data = await res.json();
+    data.source = "backend";
+    data.response_time_ms = Math.round(performance.now() - start);
+    return data;
+  } catch (err) {
+    log("(Backend unavailable — using local simulation)");
+    const local = localSimulate(transcript, isInterrupt);
+    local.response_time_ms = Math.round(performance.now() - start);
+    return local;
+  }
+}
+
+async function runNormal() {
   clearLog();
   log("[1] Customer speaks: I'd like to book a table for two tomorrow.");
   log("[2] STT → text");
-  const r = simulate("I'd like to book a table for two tomorrow.");
+  const r = await callAgent("I'd like to book a table for two tomorrow.");
   log("[3] LLM identified intent: make_reservation");
-  if (r.toolCalled) log("[4] Agent called reservation tool");
+  if (r.tool_called) log("[4] Agent called reservation tool");
   log("[5] TTS: " + r.reply);
-  timeEl.textContent = r.elapsed + " ms";
-  completeEl.textContent = r.completed ? "Yes" : "No";
-  handoffEl.textContent = r.handoff ? "Yes" : "No";
+  log("Source: " + r.source);
+  timeEl.textContent = r.response_time_ms + " ms";
+  completeEl.textContent = r.task_completed ? "Yes" : "No";
+  handoffEl.textContent = r.handoff_correct ? "Yes" : "No";
 }
 
-function runInterrupt() {
+async function runInterrupt() {
   clearLog();
   log("[1] Customer: I'd like to book a table for two tomorrow.");
   log("[5] Agent starts speaking confirmation...");
   log(">>> INTERRUPTION (customer speaks while agent is talking)");
   log("[Interrupt] Stopping TTS / clearing buffer");
-  const r = simulate("Wait, make it for four people instead", true);
+  const r = await callAgent("Wait, make it for four people instead", true);
   log("[2-3] New STT + LLM on interrupted utterance");
   log("[5] New TTS: " + r.reply);
-  timeEl.textContent = r.elapsed + " ms";
-  completeEl.textContent = r.completed ? "Yes" : "No";
+  log("Source: " + r.source);
+  timeEl.textContent = r.response_time_ms + " ms";
+  completeEl.textContent = r.task_completed ? "Yes" : "No";
   handoffEl.textContent = "Interrupt handled";
 }
 
-function runHandoff() {
+async function runHandoff() {
   clearLog();
   log("[1] Customer: I have a complaint about my last reservation.");
   log("[2] STT → text");
-  const r = simulate("I have a complaint about my last reservation");
+  const r = await callAgent("I have a complaint about my last reservation");
   log("[3] LLM identified intent: needs human");
-  log("[4] Handoff triggered (no reservation tool)");
+  if (r.handoff_correct) log("[4] Handoff triggered (no reservation tool)");
   log("[5] TTS: " + r.reply);
-  timeEl.textContent = r.elapsed + " ms";
-  completeEl.textContent = r.completed ? "Yes" : "No";
-  handoffEl.textContent = r.handoff ? "Correct" : "No";
+  log("Source: " + r.source);
+  timeEl.textContent = r.response_time_ms + " ms";
+  completeEl.textContent = r.task_completed ? "Yes" : "No";
+  handoffEl.textContent = r.handoff_correct ? "Correct" : "No";
 }
 </script>
 </body>

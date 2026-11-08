@@ -3,20 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Voice Agent — Working</title>
+<title>Voice Agent</title>
 <style>
   :root { --bg:#0f1419; --card:#1a2332; --text:#e6edf3; --muted:#8b9bb4; --accent:#3b82f6; }
   * { box-sizing: border-box; }
   body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin:0; padding:1.5rem; }
-  .container { max-width: 720px; margin: 0 auto; }
+  .container { max-width: 760px; margin: 0 auto; }
   h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
   .sub { color: var(--muted); margin-bottom: 1rem; font-size: 0.9rem; }
-  .metrics { background: var(--card); border-radius: 12px; padding: 1rem; display: grid; grid-template-columns: repeat(3,1fr); gap: 0.5rem; margin-bottom: 1rem; }
+  .metrics { background: var(--card); border-radius: 12px; padding: 1rem; display: grid; grid-template-columns: repeat(4,1fr); gap: 0.5rem; margin-bottom: 1rem; }
   .metric { text-align: center; }
-  .metric span { display: block; font-size: 1.3rem; font-weight: 600; }
+  .metric span { display: block; font-size: 1.2rem; font-weight: 600; }
   .metric small { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; }
   button, input { font-size: 1rem; }
-  button { background: var(--accent); color: #fff; border: none; padding: 0.7rem 1.2rem; border-radius: 8px; cursor: pointer; }
+  button { background: var(--accent); color: #fff; border: none; padding: 0.65rem 1rem; border-radius: 8px; cursor: pointer; }
   button.secondary { background: #334155; }
   button.listening { background: #dc2626; }
   input { background: #0a0e14; color: var(--text); border: 1px solid #334155; border-radius: 8px; padding: 0.5rem 0.75rem; width: 100%; margin-bottom: 0.5rem; }
@@ -29,30 +29,29 @@
 <body>
 <div class="container">
   <h1>Voice Agent</h1>
-  <p class="sub">Speak to check availability and book. Sponsored by Creignificent LLC.</p>
-
+  <p class="sub">WAKE → LISTEN → UNDERSTAND → ACT → SPEAK → LOG. Sponsored by Creignificent LLC.</p>
   <div id="authBox" class="auth">
     <input id="email" placeholder="Email" type="email">
-    <input id="name" placeholder="Name (for register)" type="text">
+    <input id="name" placeholder="Name (register)" type="text">
     <button onclick="register()">Register</button>
     <button class="secondary" onclick="login()">Login</button>
     <div id="authStatus" style="margin-top:0.5rem; font-size:0.85rem;"></div>
   </div>
-
   <div id="app" class="hidden">
     <div class="metrics">
-      <div class="metric"><small>Response time</small><span id="time">—</span></div>
-      <div class="metric"><small>Task complete</small><span id="complete">—</span></div>
-      <div class="metric"><small>State</small><span id="state">—</span></div>
+      <div class="metric"><small>Latency</small><span id="time">—</span></div>
+      <div class="metric"><small>Task</small><span id="complete">—</span></div>
+      <div class="metric"><small>Intent</small><span id="intent">—</span></div>
+      <div class="metric"><small>Session</small><span id="sid">—</span></div>
     </div>
     <button id="mic">Hold to speak</button>
-    <button id="stop" class="secondary" style="margin-left:0.5rem;">Stop TTS</button>
-    <button class="secondary" style="margin-left:0.5rem;" onclick="loadMine()">My bookings</button>
-    <div id="log">Ready. Hold the button and speak.</div>
+    <button id="stop" class="secondary" style="margin-left:0.4rem;">Stop TTS</button>
+    <button class="secondary" style="margin-left:0.4rem;" onclick="loadMine()">My bookings</button>
+    <button class="secondary" style="margin-left:0.4rem;" onclick="loadCalls()">Calls</button>
+    <div id="log">Ready. Hold the button to wake and speak.</div>
   </div>
   <p class="note">Sponsored by <strong>Creignificent LLC</strong></p>
 </div>
-
 <script>
 const authBox = document.getElementById("authBox");
 const app = document.getElementById("app");
@@ -62,131 +61,27 @@ const stopBtn = document.getElementById("stop");
 const logEl = document.getElementById("log");
 const timeEl = document.getElementById("time");
 const completeEl = document.getElementById("complete");
-const stateEl = document.getElementById("state");
-
+const intentEl = document.getElementById("intent");
+const sidEl = document.getElementById("sid");
 let token = localStorage.getItem("va_token") || "";
+let sessionId = null;
 let recognition = null;
 let speaking = false;
-
-function log(msg) {
-  logEl.textContent += (logEl.textContent.endsWith("\n") ? "" : "\n") + msg;
-  logEl.scrollTop = logEl.scrollHeight;
-}
-
-function speak(text) {
-  if (!window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  speaking = true;
-  u.onend = () => speaking = false;
-  window.speechSynthesis.speak(u);
-}
-
+function log(msg) { logEl.textContent += (logEl.textContent.endsWith("\n") ? "" : "\n") + msg; logEl.scrollTop = logEl.scrollHeight; }
+function speak(text) { if (!window.speechSynthesis) return; window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); speaking = true; u.onend = () => speaking = false; window.speechSynthesis.speak(u); }
 stopBtn.onclick = () => { window.speechSynthesis.cancel(); speaking = false; log("[Interrupt] TTS stopped"); };
-
-async function register() {
-  const email = document.getElementById("email").value.trim();
-  const name = document.getElementById("name").value.trim();
-  const res = await fetch("/api/auth/register", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({email, name}) });
-  const data = await res.json();
-  if (data.token) { token = data.token; localStorage.setItem("va_token", token); showApp(data.user); }
-  else authStatus.textContent = data.error || "Register failed";
-}
-
-async function login() {
-  const email = document.getElementById("email").value.trim();
-  const res = await fetch("/api/auth/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({email}) });
-  const data = await res.json();
-  if (data.token) { token = data.token; localStorage.setItem("va_token", token); showApp(data.user); }
-  else authStatus.textContent = data.error || "Login failed";
-}
-
-function showApp(user) {
-  authBox.classList.add("hidden");
-  app.classList.remove("hidden");
-  log("Signed in as " + (user.name || user.email));
-}
-
-function setupRecognition() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { log("Speech recognition not supported."); return null; }
-  const rec = new SR();
-  rec.lang = "en-US";
-  rec.interimResults = false;
-  rec.continuous = false;
-  return rec;
-}
-
-micBtn.onmousedown = micBtn.ontouchstart = () => {
-  if (speaking) { window.speechSynthesis.cancel(); log("[Interrupt] User spoke while agent was talking"); }
-  recognition = setupRecognition();
-  if (!recognition) return;
-  micBtn.classList.add("listening");
-  micBtn.textContent = "Listening…";
-  logEl.textContent = "";
-  recognition.onresult = async (e) => {
-    const transcript = e.results[0][0].transcript;
-    log("[You] " + transcript);
-    await sendToAgent(transcript, speaking);
-    await storeAudio(transcript);
-  };
-  recognition.onerror = (e) => log("Mic error: " + e.error);
-  recognition.onend = () => { micBtn.classList.remove("listening"); micBtn.textContent = "Hold to speak"; };
-  recognition.start();
-};
+async function register() { const email = document.getElementById("email").value.trim(); const name = document.getElementById("name").value.trim(); const res = await fetch("/api/auth/register", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({email, name}) }); const data = await res.json(); if (data.token) { token = data.token; localStorage.setItem("va_token", token); showApp(data.user); } else authStatus.textContent = data.error || "Register failed"; }
+async function login() { const email = document.getElementById("email").value.trim(); const res = await fetch("/api/auth/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({email}) }); const data = await res.json(); if (data.token) { token = data.token; localStorage.setItem("va_token", token); showApp(data.user); } else authStatus.textContent = data.error || "Login failed"; }
+function showApp(user) { authBox.classList.add("hidden"); app.classList.remove("hidden"); log("Signed in as " + (user.name || user.email)); }
+async function wake() { const res = await fetch("/api/wake", { method:"POST", headers:{"Content-Type":"application/json","Authorization":"Bearer "+token}, body: JSON.stringify({token}) }); const data = await res.json(); sessionId = data.session_id; sidEl.textContent = sessionId || "—"; log("[WAKE] session " + sessionId + " | tables " + data.tables_loaded); }
+function setupRecognition() { const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { log("Speech recognition not supported in this browser."); return null; } const rec = new SR(); rec.lang = "en-US"; rec.interimResults = false; rec.continuous = false; return rec; }
+micBtn.onmousedown = micBtn.ontouchstart = async () => { if (speaking) { window.speechSynthesis.cancel(); log("[Interrupt] stopping TTS"); } if (!sessionId) await wake(); recognition = setupRecognition(); if (!recognition) return; micBtn.classList.add("listening"); micBtn.textContent = "Listening…"; recognition.onresult = async (e) => { const transcript = e.results[0][0].transcript; log("[LISTEN] " + transcript); await turn(transcript, speaking); await storeAudio(transcript); }; recognition.onerror = (e) => log("Mic error: " + e.error); recognition.onend = () => { micBtn.classList.remove("listening"); micBtn.textContent = "Hold to speak"; }; recognition.start(); };
 micBtn.onmouseup = micBtn.ontouchend = () => { if (recognition) recognition.stop(); };
-
-async function sendToAgent(transcript, wasInterrupted) {
-  try {
-    const res = await fetch("/api/agent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
-      body: JSON.stringify({ transcript, interrupt: wasInterrupted, token })
-    });
-    if (!res.ok) throw new Error(res.status);
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n\n");
-      buffer = lines.pop();
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const data = JSON.parse(line.slice(6));
-          log("[Agent] " + data.delta);
-          log("Intent: " + data.intent + " | State: " + data.state);
-          if (data.booking) log("Booking: " + JSON.stringify(data.booking));
-          timeEl.textContent = data.metrics.response_time_ms + " ms";
-          completeEl.textContent = data.metrics.task_completed ? "Yes" : "No";
-          stateEl.textContent = data.state;
-          speak(data.delta);
-        }
-      }
-    }
-  } catch (err) {
-    log("Backend error: " + err);
-  }
-}
-
-async function storeAudio(transcript) {
-  if (!token) return;
-  await fetch("/api/audio", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
-    body: JSON.stringify({ transcript, audio_ref: null, token })
-  });
-}
-
-async function loadMine() {
-  const res = await fetch("/api/bookings", { headers: { "Authorization": "Bearer " + token } });
-  const data = await res.json();
-  log("My bookings: " + JSON.stringify(data.bookings || data));
-}
-
-if (token) { authBox.classList.add("hidden"); app.classList.remove("hidden"); log("Session restored."); }
+async function turn(transcript, wasInterrupted) { const res = await fetch("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token }, body: JSON.stringify({ transcript, interrupt: wasInterrupted, token, session_id: sessionId }) }); if (!res.ok) { log("Error " + res.status); return; } const reader = res.body.getReader(); const decoder = new TextDecoder(); let buffer = ""; while (true) { const { done, value } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const lines = buffer.split("\n\n"); buffer = lines.pop(); for (const line of lines) { if (line.startsWith("data: ")) { const data = JSON.parse(line.slice(6)); log("[ACT] intent=" + data.intent); log("[SPEAK] " + data.delta); if (data.booking) log("Booking " + JSON.stringify(data.booking)); if (data.ticket) log("Handoff ticket " + JSON.stringify(data.ticket)); timeEl.textContent = data.metrics.response_time_ms + " ms"; completeEl.textContent = data.metrics.task_completed ? "Yes" : "No"; intentEl.textContent = data.intent; speak(data.delta); } } } }
+async function storeAudio(transcript) { if (!token) return; await fetch("/api/audio", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token }, body: JSON.stringify({ transcript, session_id: sessionId, token }) }); }
+async function loadMine() { const res = await fetch("/api/bookings", { headers: { "Authorization": "Bearer " + token } }); const data = await res.json(); log("Bookings: " + JSON.stringify(data.bookings || data)); }
+async function loadCalls() { const res = await fetch("/dashboard/calls"); const data = await res.json(); log("Calls: " + JSON.stringify(data.calls || data)); }
+if (token) { authBox.classList.add("hidden"); app.classList.remove("hidden"); log("Session restored. Hold mic to wake."); }
 </script>
 </body>
 </html>

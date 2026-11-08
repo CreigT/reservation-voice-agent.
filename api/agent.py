@@ -6,12 +6,12 @@
 from http.server import BaseHTTPRequestHandler
 import json
 import os
+import re
 import time
 import urllib.request
 import csv
 import io
 
-# Load once at import (cold start)
 RESERVATIONS_URL = os.environ.get("RESERVATIONS_URL", "").strip()
 CACHE_TTL = int(os.environ.get("CACHE_TTL_SECONDS", "60"))
 
@@ -50,6 +50,20 @@ def load_reservations():
     _cache["expires"] = now + CACHE_TTL
     return rows
 
+def extract_party(lower: str) -> str:
+    word_map = {
+        "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+        "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
+        "party of ten": "10", "party of 10": "10"
+    }
+    for word, num in word_map.items():
+        if word in lower:
+            return num
+    m = re.search(r"\b([1-9]|10)\b", lower)
+    if m:
+        return m.group(1)
+    return "2"
+
 def check_availability(date, party):
     rows = load_reservations()
     party = str(party)
@@ -78,7 +92,7 @@ def process(transcript: str, is_interrupt: bool = False):
         reply = "Transferring you to a person now."
     elif any(w in lower for w in ["table", "book", "reservation"]):
         intent = "make_reservation"
-        party = "2" if ("two" in lower or " 2" in lower or lower.startswith("2")) else "4" if ("four" in lower or " 4" in lower) else "2"
+        party = extract_party(lower)
         date = "tomorrow" if "tomorrow" in lower else "saturday" if "saturday" in lower else "tomorrow"
         tool_result = check_availability(date, party)
         if tool_result["available"]:

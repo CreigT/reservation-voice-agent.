@@ -3,157 +3,149 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Voice Agent Workflow Demo</title>
+<title>Voice Agent — Working</title>
 <style>
-  :root { --bg: #0f1419; --card: #1a2332; --text: #e6edf3; --muted: #8b9bb4; --accent: #3b82f6; --green: #22c55e; --yellow: #eab308; --pink: #ec4899; }
+  :root { --bg:#0f1419; --card:#1a2332; --text:#e6edf3; --muted:#8b9bb4; --accent:#3b82f6; }
   * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 1.5rem; line-height: 1.5; }
+  body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin:0; padding:1.5rem; }
   .container { max-width: 720px; margin: 0 auto; }
-  h1 { font-size: 1.6rem; margin: 0 0 0.5rem; }
-  .subtitle { color: var(--muted); margin-bottom: 1.5rem; font-size: 0.95rem; }
-  .metrics { background: var(--card); border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
+  .sub { color: var(--muted); margin-bottom: 1rem; font-size: 0.9rem; }
+  .metrics { background: var(--card); border-radius: 12px; padding: 1rem; display: grid; grid-template-columns: repeat(3,1fr); gap: 0.5rem; margin-bottom: 1rem; }
   .metric { text-align: center; }
-  .metric span { display: block; font-size: 1.4rem; font-weight: 600; margin-top: 0.2rem; }
-  .metric small { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
-  .buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
-  button { background: var(--accent); color: white; border: none; padding: 0.65rem 1rem; border-radius: 8px; font-size: 0.9rem; cursor: pointer; }
-  button:hover { opacity: 0.9; }
-  button.secondary { background: #334155; }
-  #log { background: #0a0e14; color: #7dd3fc; padding: 1rem; border-radius: 12px; min-height: 180px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; white-space: pre-wrap; overflow-y: auto; max-height: 320px; }
-  .note { margin-top: 1.5rem; font-size: 0.8rem; color: var(--muted); }
+  .metric span { display: block; font-size: 1.3rem; font-weight: 600; }
+  .metric small { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; }
+  button { background: var(--accent); color: #fff; border: none; padding: 0.7rem 1.2rem; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+  button.listening { background: #dc2626; }
+  #log { background: #0a0e14; color: #7dd3fc; padding: 1rem; border-radius: 12px; min-height: 160px; font-family: ui-monospace, monospace; font-size: 13px; white-space: pre-wrap; margin-top: 1rem; }
+  .note { margin-top: 1.5rem; font-size: 0.8rem; color: var(--muted); text-align: center; }
 </style>
 </head>
 <body>
 <div class="container">
-  <h1>Voice Agent Workflow</h1>
-  <p class="subtitle">Reservation flow with interruption (barge-in) and handoff — frontend + backend</p>
+  <h1>Voice Agent</h1>
+  <p class="sub">Speak to check availability. Real microphone + TTS. Sponsored by Creignificent LLC.</p>
 
   <div class="metrics">
     <div class="metric"><small>Response time</small><span id="time">—</span></div>
-    <div class="metric"><small>Task completion</small><span id="complete">—</span></div>
-    <div class="metric"><small>Handoff</small><span id="handoff">—</span></div>
+    <div class="metric"><small>Task complete</small><span id="complete">—</span></div>
+    <div class="metric"><small>State</small><span id="state">—</span></div>
   </div>
 
-  <div class="buttons">
-    <button onclick="runNormal()">Run normal booking</button>
-    <button onclick="runInterrupt()">Test interruption</button>
-    <button class="secondary" onclick="runHandoff()">Test handoff</button>
-    <button class="secondary" onclick="clearLog()">Clear</button>
-  </div>
+  <button id="mic">Hold to speak</button>
+  <button id="stop" style="background:#334155; margin-left:0.5rem;">Stop TTS</button>
 
-  <div id="log">Ready. Click a button to run the workflow.</div>
-
-  <p class="note">
-    Calls <code>/api/agent</code> when deployed. Falls back to local simulation if the backend is unavailable.<br>
-    Metrics update after each run.
-  </p>
-  <p class="note" style="margin-top: 0.5rem; text-align: center;">
-    Sponsored by <strong>Creignificent LLC</strong>
-  </p>
+  <div id="log">Ready. Hold the button and speak a reservation request.</div>
+  <p class="note">Sponsored by <strong>Creignificent LLC</strong></p>
 </div>
 
 <script>
-const logEl = document.getElementById('log');
-const timeEl = document.getElementById('time');
-const completeEl = document.getElementById('complete');
-const handoffEl = document.getElementById('handoff');
+const micBtn = document.getElementById("mic");
+const stopBtn = document.getElementById("stop");
+const logEl = document.getElementById("log");
+const timeEl = document.getElementById("time");
+const completeEl = document.getElementById("complete");
+const stateEl = document.getElementById("state");
+
+let recognition = null;
+let speaking = false;
 
 function log(msg) {
-  logEl.textContent += (logEl.textContent.endsWith('\n') || logEl.textContent === '' ? '' : '\n') + msg;
+  logEl.textContent += (logEl.textContent.endsWith("\n") ? "" : "\n") + msg;
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-function clearLog() {
-  logEl.textContent = 'Cleared.\n';
-  timeEl.textContent = '—';
-  completeEl.textContent = '—';
-  handoffEl.textContent = '—';
+function speak(text) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  speaking = true;
+  u.onend = () => speaking = false;
+  window.speechSynthesis.speak(u);
 }
 
-// Local fallback (used when /api/agent is not reachable)
-function localSimulate(transcript, isInterrupt = false) {
-  const lower = transcript.toLowerCase();
-  let reply, completed = false, handoff = false, toolCalled = false;
-  if (isInterrupt) {
-    reply = "Understood — stopping previous response. How can I help with the new request?";
-    completed = true;
-  } else if (lower.includes("table for two tomorrow") || lower.includes("book a table")) {
-    toolCalled = true;
-    reply = "Table for 2 booked for tomorrow at 7:00 PM. Confirmation RES-2-TOMORR.";
-    completed = true;
-  } else if (lower.includes("party of 10") || lower.includes("complaint") || lower.includes("manager") || lower.includes("human")) {
-    handoff = true;
-    reply = "This needs a human. Transferring you now.";
-    completed = true;
-  } else {
-    reply = "I can help with reservations. Party size and date?";
-    completed = false;
+stopBtn.onclick = () => {
+  window.speechSynthesis.cancel();
+  speaking = false;
+  log("[Interrupt] TTS stopped");
+};
+
+function setupRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    log("Speech recognition not supported in this browser.");
+    return null;
   }
-  return { reply, response_time_ms: 0, task_completed: completed, handoff_correct: handoff || null, tool_called: toolCalled, interrupt_handled: isInterrupt, source: "local" };
+  const rec = new SpeechRecognition();
+  rec.lang = "en-US";
+  rec.interimResults = false;
+  rec.continuous = false;
+  return rec;
 }
 
-async function callAgent(transcript, isInterrupt = false) {
-  const start = performance.now();
+micBtn.onmousedown = micBtn.ontouchstart = async () => {
+  if (speaking) {
+    window.speechSynthesis.cancel();
+    log("[Interrupt] User spoke while agent was talking");
+  }
+  recognition = setupRecognition();
+  if (!recognition) return;
+  micBtn.classList.add("listening");
+  micBtn.textContent = "Listening…";
+  logEl.textContent = "";
+  recognition.onresult = async (e) => {
+    const transcript = e.results[0][0].transcript;
+    log("[You] " + transcript);
+    await sendToAgent(transcript, speaking);
+  };
+  recognition.onerror = (e) => log("Mic error: " + e.error);
+  recognition.onend = () => {
+    micBtn.classList.remove("listening");
+    micBtn.textContent = "Hold to speak";
+  };
+  recognition.start();
+};
+
+micBtn.onmouseup = micBtn.ontouchend = () => {
+  if (recognition) recognition.stop();
+};
+
+async function sendToAgent(transcript, wasInterrupted) {
   try {
     const res = await fetch("/api/agent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transcript, interrupt: isInterrupt })
+      body: JSON.stringify({ transcript, interrupt: wasInterrupted })
     });
-    if (!res.ok) throw new Error("Backend returned " + res.status);
-    const data = await res.json();
-    data.source = "backend";
-    data.response_time_ms = Math.round(performance.now() - start);
-    return data;
+    if (!res.ok) throw new Error(res.status);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n\n");
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const data = JSON.parse(line.slice(6));
+          log("[Agent] " + data.delta);
+          log("Intent: " + data.intent + " | State: " + data.state);
+          if (data.tool_result) log("Tool: " + JSON.stringify(data.tool_result));
+          timeEl.textContent = data.metrics.response_time_ms + " ms";
+          completeEl.textContent = data.metrics.task_completed ? "Yes" : "No";
+          stateEl.textContent = data.state;
+          speak(data.delta);
+        }
+      }
+    }
   } catch (err) {
-    log("(Backend unavailable — using local simulation)");
-    const local = localSimulate(transcript, isInterrupt);
-    local.response_time_ms = Math.round(performance.now() - start);
-    return local;
+    log("Backend error — falling back. " + err);
+    const fallback = "I can check availability. How many people and what day?";
+    log("[Agent] " + fallback);
+    speak(fallback);
   }
-}
-
-async function runNormal() {
-  clearLog();
-  log("[1] Customer speaks: I'd like to book a table for two tomorrow.");
-  log("[2] STT → text");
-  const r = await callAgent("I'd like to book a table for two tomorrow.");
-  log("[3] LLM identified intent: make_reservation");
-  if (r.tool_called) log("[4] Agent called reservation tool");
-  log("[5] TTS: " + r.reply);
-  log("Source: " + r.source);
-  timeEl.textContent = r.response_time_ms + " ms";
-  completeEl.textContent = r.task_completed ? "Yes" : "No";
-  handoffEl.textContent = r.handoff_correct ? "Yes" : "No";
-}
-
-async function runInterrupt() {
-  clearLog();
-  log("[1] Customer: I'd like to book a table for two tomorrow.");
-  log("[5] Agent starts speaking confirmation...");
-  log(">>> INTERRUPTION (customer speaks while agent is talking)");
-  log("[Interrupt] Stopping TTS / clearing buffer");
-  const r = await callAgent("Wait, make it for four people instead", true);
-  log("[2-3] New STT + LLM on interrupted utterance");
-  log("[5] New TTS: " + r.reply);
-  log("Source: " + r.source);
-  timeEl.textContent = r.response_time_ms + " ms";
-  completeEl.textContent = r.task_completed ? "Yes" : "No";
-  handoffEl.textContent = "Interrupt handled";
-}
-
-async function runHandoff() {
-  clearLog();
-  log("[1] Customer: I have a complaint about my last reservation.");
-  log("[2] STT → text");
-  const r = await callAgent("I have a complaint about my last reservation");
-  log("[3] LLM identified intent: needs human");
-  if (r.handoff_correct) log("[4] Handoff triggered (no reservation tool)");
-  log("[5] TTS: " + r.reply);
-  log("Source: " + r.source);
-  timeEl.textContent = r.response_time_ms + " ms";
-  completeEl.textContent = r.task_completed ? "Yes" : "No";
-  handoffEl.textContent = r.handoff_correct ? "Correct" : "No";
 }
 </script>
 </body>

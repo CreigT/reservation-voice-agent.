@@ -1,0 +1,6 @@
+party_size,date,time,status,confirmation
+2,tomorrow,19:00,available,
+4,tomorrow,19:00,available,
+2,tomorrow,18:00,booked,RES-2-TOMORR
+6,saturday,20:00,available,
+10,any,any,handoff,

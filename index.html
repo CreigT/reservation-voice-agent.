@@ -15,31 +15,48 @@
   .metric { text-align: center; }
   .metric span { display: block; font-size: 1.3rem; font-weight: 600; }
   .metric small { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; }
-  button { background: var(--accent); color: #fff; border: none; padding: 0.7rem 1.2rem; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+  button, input { font-size: 1rem; }
+  button { background: var(--accent); color: #fff; border: none; padding: 0.7rem 1.2rem; border-radius: 8px; cursor: pointer; }
+  button.secondary { background: #334155; }
   button.listening { background: #dc2626; }
-  #log { background: #0a0e14; color: #7dd3fc; padding: 1rem; border-radius: 12px; min-height: 160px; font-family: ui-monospace, monospace; font-size: 13px; white-space: pre-wrap; margin-top: 1rem; }
+  input { background: #0a0e14; color: var(--text); border: 1px solid #334155; border-radius: 8px; padding: 0.5rem 0.75rem; width: 100%; margin-bottom: 0.5rem; }
+  .auth { background: var(--card); padding: 1rem; border-radius: 12px; margin-bottom: 1rem; }
+  #log { background: #0a0e14; color: #7dd3fc; padding: 1rem; border-radius: 12px; min-height: 140px; font-family: ui-monospace, monospace; font-size: 13px; white-space: pre-wrap; margin-top: 1rem; }
   .note { margin-top: 1.5rem; font-size: 0.8rem; color: var(--muted); text-align: center; }
+  .hidden { display: none; }
 </style>
 </head>
 <body>
 <div class="container">
   <h1>Voice Agent</h1>
-  <p class="sub">Speak to check availability. Real microphone + TTS. Sponsored by Creignificent LLC.</p>
+  <p class="sub">Speak to check availability and book. Sponsored by Creignificent LLC.</p>
 
-  <div class="metrics">
-    <div class="metric"><small>Response time</small><span id="time">—</span></div>
-    <div class="metric"><small>Task complete</small><span id="complete">—</span></div>
-    <div class="metric"><small>State</small><span id="state">—</span></div>
+  <div id="authBox" class="auth">
+    <input id="email" placeholder="Email" type="email">
+    <input id="name" placeholder="Name (for register)" type="text">
+    <button onclick="register()">Register</button>
+    <button class="secondary" onclick="login()">Login</button>
+    <div id="authStatus" style="margin-top:0.5rem; font-size:0.85rem;"></div>
   </div>
 
-  <button id="mic">Hold to speak</button>
-  <button id="stop" style="background:#334155; margin-left:0.5rem;">Stop TTS</button>
-
-  <div id="log">Ready. Hold the button and speak a reservation request.</div>
+  <div id="app" class="hidden">
+    <div class="metrics">
+      <div class="metric"><small>Response time</small><span id="time">—</span></div>
+      <div class="metric"><small>Task complete</small><span id="complete">—</span></div>
+      <div class="metric"><small>State</small><span id="state">—</span></div>
+    </div>
+    <button id="mic">Hold to speak</button>
+    <button id="stop" class="secondary" style="margin-left:0.5rem;">Stop TTS</button>
+    <button class="secondary" style="margin-left:0.5rem;" onclick="loadMine()">My bookings</button>
+    <div id="log">Ready. Hold the button and speak.</div>
+  </div>
   <p class="note">Sponsored by <strong>Creignificent LLC</strong></p>
 </div>
 
 <script>
+const authBox = document.getElementById("authBox");
+const app = document.getElementById("app");
+const authStatus = document.getElementById("authStatus");
 const micBtn = document.getElementById("mic");
 const stopBtn = document.getElementById("stop");
 const logEl = document.getElementById("log");
@@ -47,6 +64,7 @@ const timeEl = document.getElementById("time");
 const completeEl = document.getElementById("complete");
 const stateEl = document.getElementById("state");
 
+let token = localStorage.getItem("va_token") || "";
 let recognition = null;
 let speaking = false;
 
@@ -64,30 +82,43 @@ function speak(text) {
   window.speechSynthesis.speak(u);
 }
 
-stopBtn.onclick = () => {
-  window.speechSynthesis.cancel();
-  speaking = false;
-  log("[Interrupt] TTS stopped");
-};
+stopBtn.onclick = () => { window.speechSynthesis.cancel(); speaking = false; log("[Interrupt] TTS stopped"); };
+
+async function register() {
+  const email = document.getElementById("email").value.trim();
+  const name = document.getElementById("name").value.trim();
+  const res = await fetch("/api/auth/register", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({email, name}) });
+  const data = await res.json();
+  if (data.token) { token = data.token; localStorage.setItem("va_token", token); showApp(data.user); }
+  else authStatus.textContent = data.error || "Register failed";
+}
+
+async function login() {
+  const email = document.getElementById("email").value.trim();
+  const res = await fetch("/api/auth/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({email}) });
+  const data = await res.json();
+  if (data.token) { token = data.token; localStorage.setItem("va_token", token); showApp(data.user); }
+  else authStatus.textContent = data.error || "Login failed";
+}
+
+function showApp(user) {
+  authBox.classList.add("hidden");
+  app.classList.remove("hidden");
+  log("Signed in as " + (user.name || user.email));
+}
 
 function setupRecognition() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    log("Speech recognition not supported in this browser.");
-    return null;
-  }
-  const rec = new SpeechRecognition();
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { log("Speech recognition not supported."); return null; }
+  const rec = new SR();
   rec.lang = "en-US";
   rec.interimResults = false;
   rec.continuous = false;
   return rec;
 }
 
-micBtn.onmousedown = micBtn.ontouchstart = async () => {
-  if (speaking) {
-    window.speechSynthesis.cancel();
-    log("[Interrupt] User spoke while agent was talking");
-  }
+micBtn.onmousedown = micBtn.ontouchstart = () => {
+  if (speaking) { window.speechSynthesis.cancel(); log("[Interrupt] User spoke while agent was talking"); }
   recognition = setupRecognition();
   if (!recognition) return;
   micBtn.classList.add("listening");
@@ -97,25 +128,20 @@ micBtn.onmousedown = micBtn.ontouchstart = async () => {
     const transcript = e.results[0][0].transcript;
     log("[You] " + transcript);
     await sendToAgent(transcript, speaking);
+    await storeAudio(transcript);
   };
   recognition.onerror = (e) => log("Mic error: " + e.error);
-  recognition.onend = () => {
-    micBtn.classList.remove("listening");
-    micBtn.textContent = "Hold to speak";
-  };
+  recognition.onend = () => { micBtn.classList.remove("listening"); micBtn.textContent = "Hold to speak"; };
   recognition.start();
 };
-
-micBtn.onmouseup = micBtn.ontouchend = () => {
-  if (recognition) recognition.stop();
-};
+micBtn.onmouseup = micBtn.ontouchend = () => { if (recognition) recognition.stop(); };
 
 async function sendToAgent(transcript, wasInterrupted) {
   try {
     const res = await fetch("/api/agent", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transcript, interrupt: wasInterrupted })
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+      body: JSON.stringify({ transcript, interrupt: wasInterrupted, token })
     });
     if (!res.ok) throw new Error(res.status);
     const reader = res.body.getReader();
@@ -132,7 +158,7 @@ async function sendToAgent(transcript, wasInterrupted) {
           const data = JSON.parse(line.slice(6));
           log("[Agent] " + data.delta);
           log("Intent: " + data.intent + " | State: " + data.state);
-          if (data.tool_result) log("Tool: " + JSON.stringify(data.tool_result));
+          if (data.booking) log("Booking: " + JSON.stringify(data.booking));
           timeEl.textContent = data.metrics.response_time_ms + " ms";
           completeEl.textContent = data.metrics.task_completed ? "Yes" : "No";
           stateEl.textContent = data.state;
@@ -141,12 +167,26 @@ async function sendToAgent(transcript, wasInterrupted) {
       }
     }
   } catch (err) {
-    log("Backend error — falling back. " + err);
-    const fallback = "I can check availability. How many people and what day?";
-    log("[Agent] " + fallback);
-    speak(fallback);
+    log("Backend error: " + err);
   }
 }
+
+async function storeAudio(transcript) {
+  if (!token) return;
+  await fetch("/api/audio", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+    body: JSON.stringify({ transcript, audio_ref: null, token })
+  });
+}
+
+async function loadMine() {
+  const res = await fetch("/api/bookings", { headers: { "Authorization": "Bearer " + token } });
+  const data = await res.json();
+  log("My bookings: " + JSON.stringify(data.bookings || data));
+}
+
+if (token) { authBox.classList.add("hidden"); app.classList.remove("hidden"); log("Session restored."); }
 </script>
 </body>
 </html>

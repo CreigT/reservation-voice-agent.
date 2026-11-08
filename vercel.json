@@ -5,6 +5,7 @@
   ],
   "routes": [
     { "src": "/api/(.*)", "dest": "api/agent.py" },
+    { "src": "/dashboard/(.*)", "dest": "api/agent.py" },
     { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
